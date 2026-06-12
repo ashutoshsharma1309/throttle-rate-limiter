@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package throttle.v1;
+
+// Mirrors the REST contract exactly. The API key travels in call metadata
+// under the key "x-api-key" (the gRPC analogue of the X-API-Key header).
+service RateLimiter {
+  rpc Check (CheckRequest) returns (CheckResponse);
+  rpc CheckBatch (CheckBatchRequest) returns (CheckBatchResponse);
+  rpc Health (HealthRequest) returns (HealthResponse);
+}
+
+message CheckRequest {
+  string rule = 1;
+  string identifier = 2;
+  uint32 cost = 3; // 0 => use the rule's default cost
+}
+
+// A denied request is NOT a gRPC error — it returns allowed=false with the
+// same fields, exactly like the REST 429 body. Genuine failures (unknown key,
+// unknown rule, invalid cost, backend down) surface as gRPC status codes.
+message CheckResponse {
+  bool allowed = 1;
+  int64 remaining = 2;
+  int64 limit = 3;
+  int64 retry_after_ms = 4;
+  int64 reset_ms = 5;
+}
+
+message CheckBatchRequest {
+  repeated CheckRequest checks = 1; // up to 50
+}
+
+message BatchError {
+  string code = 1;
+  string message = 2;
+}
+
+message BatchEntry {
+  oneof result {
+    CheckResponse decision = 1;
+    BatchError error = 2;
+  }
+}
+
+message CheckBatchResponse {
+  repeated BatchEntry results = 1;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+  string redis = 2; // "up" | "down"
+  int64 uptime_ms = 3;
+}
