@@ -7,6 +7,8 @@ docker compose up --build        # redis + service (REST :8080, gRPC :50051)
 pnpm seed                        # demo tenant + 2 rules, prints curl/grpcurl examples
 ```
 
+Deploying to a live URL? See **[DEPLOY.md](DEPLOY.md)** (Fly.io + managed Redis, ~10 min).
+
 ---
 
 ## Table of contents

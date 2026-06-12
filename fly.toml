@@ -1,0 +1,53 @@
+# Fly.io config for Throttle. Change `app` to your own unique name (or let
+# `fly launch` set it). REST is the public HTTPS surface; gRPC is exposed on a
+# TLS-terminated TCP service. See DEPLOY.md for the full walkthrough.
+app = "throttle-rate-limiter"
+primary_region = "iad"
+
+[build]
+  # Uses the repo Dockerfile (multi-stage, prod-only runtime).
+
+[env]
+  NODE_ENV = "production"
+  LOG_LEVEL = "info"
+  HTTP_PORT = "8080"
+  GRPC_PORT = "50051"
+  # Demo default: stay available if Redis blips. Flip to "false" to fail-closed.
+  FAIL_OPEN = "true"
+  # Upstash from another region can exceed the default 50ms; bump if you see
+  # spurious fail-open in logs.
+  REDIS_COMMAND_TIMEOUT_MS = "200"
+  # Secrets (NOT here): REDIS_URL, ADMIN_API_KEY  -> `fly secrets set ...`
+
+# ── REST (public HTTPS, auto HTTP/2) ─────────────────────────────────────────
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "5s"
+    method = "GET"
+    path = "/v1/health"
+
+# ── gRPC (TLS at the edge, h2c to the app) ───────────────────────────────────
+[[services]]
+  protocol = "tcp"
+  internal_port = 50051
+
+  [[services.ports]]
+    port = 50051
+    handlers = ["tls"]
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "2s"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "512mb"
