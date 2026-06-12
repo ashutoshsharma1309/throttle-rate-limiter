@@ -1,55 +1,44 @@
-# Deploying Throttle to Fly.io
+# Deploying Throttle
 
-A live REST + gRPC endpoint backed by managed Redis, in ~10 minutes. Config
-lives in [`fly.toml`](fly.toml); CI auto-deploys via
-[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
+Recommended **no-credit-card** path: **Render** (free Docker web service) +
+**Upstash** (free serverless Redis). REST goes live on a public HTTPS URL; the
+gRPC port stays internal because Render routes one port per service (gRPC is
+still proven by the parity tests and runnable locally). Fly.io is a fuller
+alternative but requires a card — see the bottom.
 
-## Prerequisites
+Blueprint: [`render.yaml`](render.yaml). The app honors Render's injected
+`$PORT` automatically.
+
+---
+
+## 1. Create the Redis (Upstash — free, no card)
+1. Sign up at <https://upstash.com> with GitHub (no card).
+2. **Create Database** → Redis → pick a region near your Render region (e.g. US-East).
+3. Copy the **`rediss://…`** connection string (the TLS one, with the password).
+
+## 2. Deploy on Render (free, no card)
+1. Push this repo to GitHub (if you haven't: `gh repo create` or via the website).
+2. At <https://render.com> → **New** → **Blueprint** → connect the repo. Render
+   reads `render.yaml` and proposes the `throttle` web service.
+3. When prompted for the `sync:false` env vars, set:
+   - `REDIS_URL` = the Upstash `rediss://…` string
+   - `ADMIN_API_KEY` = a strong value (e.g. run `openssl rand -hex 24` locally)
+4. **Apply** → Render builds the Dockerfile and deploys. First build ~3–5 min.
+
+Your base URL is `https://throttle-XXXX.onrender.com` (Render shows it).
+
+> Free instances sleep after ~15 min idle (≈30–50s cold start on the next hit).
+> Fine for a demo; the first request after idle is slow, then it's warm.
+
+## 3. Seed a demo tenant (over the public admin API)
 ```bash
-brew install flyctl          # or: curl -L https://fly.io/install.sh | sh
-fly auth login
-```
-
-## 1. Create the app
-From the repo root (a `fly.toml` already exists, so this just registers the app):
-```bash
-fly apps create throttle-rate-limiter      # pick your own unique name
-# then set `app = "<that name>"` in fly.toml
-```
-
-## 2. Provision Redis (Upstash, same region as the app)
-```bash
-fly redis create                 # choose region iad to match primary_region
-# Copy the rediss://… connection string it prints, then:
-fly secrets set REDIS_URL="rediss://default:<password>@<host>:6379"
-```
-> Keep Redis in the **same region** as the app — cross-region latency can exceed
-> the command timeout and trip fail-open. `fly.toml` already sets a generous
-> `REDIS_COMMAND_TIMEOUT_MS=200` to be safe.
-
-## 3. Set the admin secret
-```bash
-fly secrets set ADMIN_API_KEY="$(openssl rand -hex 24)"
-# print it once so you can use it below:
-fly secrets list   # (values are hidden; keep the openssl output from above)
-```
-
-## 4. Deploy
-```bash
-fly deploy --remote-only
-fly open /v1/health      # -> {"status":"ok","redis":"up",...}
-```
-Your base URL is `https://<app>.fly.dev`.
-
-## 5. Seed a demo tenant (over the public admin API)
-```bash
-APP=https://<app>.fly.dev
+APP=https://throttle-XXXX.onrender.com
 ADMIN=<your ADMIN_API_KEY>
 
-# create a tenant -> note the returned apiKey
+# create a tenant -> note tenantId + apiKey from the response
 curl -s -XPOST "$APP/v1/admin/tenants" -H "x-api-key: $ADMIN"
 
-KEY=<apiKey from above>; TID=<tenantId from above>
+KEY=<apiKey>; TID=<tenantId>
 
 # a token-bucket rule: burst 10, sustained 5/s
 curl -s -XPUT "$APP/v1/admin/tenants/$TID/rules/burst_api" \
@@ -57,39 +46,53 @@ curl -s -XPUT "$APP/v1/admin/tenants/$TID/rules/burst_api" \
   -d '{"algorithm":"token_bucket","capacity":10,"refillRate":5}'
 ```
 
-## 6. Demo it
+## 4. Demo it
 ```bash
-# REST — hammer until 429
+curl -s "$APP/v1/health"           # {"status":"ok","redis":"up",...}
+
+# hammer until 429 (capacity 10)
 for i in $(seq 1 12); do
   curl -s -o /dev/null -w "%{http_code}\n" -XPOST "$APP/v1/check" \
     -H "x-api-key: $KEY" -H "content-type: application/json" \
     -d '{"rule":"burst_api","identifier":"demo"}'
 done
 
-# metrics
-curl -s "$APP/metrics" | head
-
-# gRPC — TLS at the Fly edge, so NO -plaintext, and use the proto in ./proto
-grpcurl -import-path ./proto -proto throttle.proto \
-  -H "x-api-key: $KEY" \
-  -d '{"rule":"burst_api","identifier":"demo"}' \
-  <app>.fly.dev:50051 throttle.v1.RateLimiter/Check
+curl -s "$APP/metrics" | head      # Prometheus metrics
 ```
 
-## 7. (Optional) CI auto-deploy
-```bash
-fly tokens create deploy -x 999999h        # a deploy token
-# add it as the repo secret FLY_API_TOKEN (Settings → Secrets → Actions)
-```
-Every green push to `main` then runs `flyctl deploy`. Until the secret exists,
-the deploy job no-ops (stays green).
+Auto-deploy is on (`autoDeploy: true`): every push to `main` redeploys.
 
 ---
 
-### Notes for production (beyond a demo)
+## Want gRPC live too? (still no card)
+Render free exposes one port, so run **both** transports locally and expose them
+through a free **Cloudflare Tunnel**:
+```bash
+docker compose up --build          # REST :8080 + gRPC :50051 locally
+brew install cloudflared
+cloudflared tunnel --url http://localhost:8080      # public HTTPS for REST
+```
+For gRPC over a named tunnel, add an ingress route to `:50051` (HTTP/2). This is
+ideal for an interview screen-share; it's only up while your machine runs.
+
+---
+
+## Alternative: Fly.io (needs a credit card)
+[`fly.toml`](fly.toml) + [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)
+deploy **both** REST and gRPC publicly (gRPC via a TLS-terminated TCP service).
+Fly requires a card on file even for the free allowance, so it's a no-go without
+one — kept here for completeness.
+
+```bash
+fly auth login && fly apps create <name>
+fly redis create
+fly secrets set REDIS_URL="rediss://…" ADMIN_API_KEY="$(openssl rand -hex 24)"
+fly deploy --remote-only
+```
+
+---
+
+### Production notes (beyond a demo)
 - **`FAIL_OPEN`**: `true` here (availability). Set `false` for auth/OTP/billing.
-- **gRPC auth metadata** rides TLS to the Fly edge; inside, the app speaks h2c.
-- **`/metrics`** is unauthenticated — fine on Fly's private demo URL; put it
-  behind the private network or an auth proxy for real traffic.
-- **Scaling**: `fly scale count 3` — the app is stateless (per-instance 30s rule
-  cache), so it scales horizontally with no coordination.
+- **`/metrics`** is unauthenticated — keep it off the public internet for real traffic.
+- **Scaling**: the app is stateless (per-instance 30s rule cache) and scales horizontally with no coordination.

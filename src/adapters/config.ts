@@ -42,6 +42,17 @@ function int(name: string, fallback: number): number {
   return n;
 }
 
+/**
+ * HTTP port default. PaaS platforms (Render, Railway, Heroku…) inject the port
+ * to listen on as $PORT; honor it so the app is portable. An explicit
+ * HTTP_PORT still overrides.
+ */
+function defaultHttpPort(): number {
+  const p = process.env.PORT;
+  if (p && Number.isInteger(Number(p))) return Number(p);
+  return 8080;
+}
+
 function bool(name: string, fallback: boolean): boolean {
   const raw = process.env[name];
   if (raw === undefined || raw === "") return fallback;
@@ -56,7 +67,7 @@ export function loadConfig(): Config {
     nodeEnv: str("NODE_ENV", "development"),
     logLevel: str("LOG_LEVEL", "info"),
 
-    httpPort: int("HTTP_PORT", 8080),
+    httpPort: int("HTTP_PORT", defaultHttpPort()),
     grpcPort: int("GRPC_PORT", 50051),
 
     redisUrl: str("REDIS_URL", "redis://127.0.0.1:6379"),
