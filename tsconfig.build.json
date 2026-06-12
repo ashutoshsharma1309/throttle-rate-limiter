@@ -1,0 +1,13 @@
+{
+  // Emit config: compile ONLY src, rooted at src, so output is dist/index.js,
+  // dist/adapters/..., etc. (tsconfig.json includes scripts/ + test/ for
+  // editor/typecheck, which would otherwise push emit under dist/src/).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "noEmit": false
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "test", "scripts"]
+}

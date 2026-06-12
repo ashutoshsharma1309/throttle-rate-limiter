@@ -1,0 +1,46 @@
+{
+  "name": "throttle",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Throttle — a distributed, multi-tenant Rate Limiter as a Service (REST + gRPC) backed by atomic Redis Lua",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && cp -r src/adapters/lua dist/adapters/lua",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "seed": "tsx scripts/seed.ts",
+    "loadtest": "bash scripts/loadtest.sh"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.12.5",
+    "@grpc/proto-loader": "^0.7.13",
+    "fastify": "^5.2.1",
+    "ioredis": "^5.4.2",
+    "pino": "^9.6.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@testcontainers/redis": "^10.16.0",
+    "@types/autocannon": "^7.12.6",
+    "@types/node": "^22.10.5",
+    "autocannon": "^8.0.0",
+    "eslint": "^9.18.0",
+    "eslint-config-prettier": "^9.1.0",
+    "pino-pretty": "^13.0.0",
+    "prettier": "^3.4.2",
+    "testcontainers": "^10.16.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.20.0",
+    "vitest": "^2.1.8"
+  }
+}
