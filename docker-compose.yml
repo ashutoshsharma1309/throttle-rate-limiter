@@ -24,7 +24,8 @@ services:
       GRPC_PORT: "50051"
       REDIS_URL: redis://redis:6379
       FAIL_OPEN: "true"
-      ADMIN_API_KEY: dev-admin-key-change-me
+      # Override before exposing publicly: `export ADMIN_API_KEY=$(openssl rand -hex 24)`
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-dev-admin-key-change-me}
     ports:
       - "8080:8080"
       - "50051:50051"
