@@ -7,7 +7,9 @@ docker compose up --build        # redis + service (REST :8080, gRPC :50051)
 pnpm seed                        # demo tenant + 2 rules, prints curl/grpcurl examples
 ```
 
-Deploying to a live URL? See **[DEPLOY.md](DEPLOY.md)** (Fly.io + managed Redis, ~10 min).
+Then open **http://localhost:8080/** for a **live dashboard** — provision a demo tenant, run the built-in load generator, and watch the limiter allow/throttle in real time (server-sent events; `curl`/gRPC traffic shows up too).
+
+Deploying to a live URL? See **[DEPLOY.md](DEPLOY.md)** (Render/Cloudflare Tunnel, no credit card).
 
 ---
 

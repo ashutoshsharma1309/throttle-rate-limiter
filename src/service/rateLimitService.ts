@@ -4,6 +4,7 @@ import { ruleLimit, type Decision } from "../core/types.js";
 import { DEFAULT_COST } from "../core/types.js";
 import type { RateLimiter, CheckInput } from "../core/limiter.js";
 import type { Metrics } from "../metrics.js";
+import type { CheckEventBus } from "../events.js";
 import type { TenantStore } from "./tenantStore.js";
 import type { RuleCache } from "./ruleCache.js";
 import {
@@ -55,6 +56,8 @@ export class RateLimitService {
     private readonly metrics: Metrics,
     private readonly log: Logger,
     private readonly policy: FailPolicy,
+    /** Optional live-event sink for the dashboard. Omitted in unit tests. */
+    private readonly events?: CheckEventBus,
   ) {}
 
   async check(req: CheckRequest): Promise<Decision> {
@@ -72,10 +75,13 @@ export class RateLimitService {
         { tenant: tenantId, rule: req.rule, allowed: decision.allowed, latencyMs: round(latencyMs) },
         "check",
       );
+      this.publishEvent(req, decision);
       return decision;
     } catch (err) {
       if (err instanceof ServiceError) throw err; // client error — never masked
-      return this.onBackendError(err, req.rule, performance.now() - t0);
+      const decision = this.onBackendError(err, req.rule, performance.now() - t0);
+      this.publishEvent(req, decision);
+      return decision;
     }
   }
 
@@ -162,6 +168,18 @@ export class RateLimitService {
     );
     if (!this.policy.failOpen) throw new BackendUnavailableError();
     return degraded();
+  }
+
+  private publishEvent(req: CheckRequest, d: Decision): void {
+    this.events?.publish({
+      ts: Date.now(),
+      rule: req.rule,
+      identifier: req.identifier,
+      allowed: d.allowed,
+      remaining: Math.max(0, d.remaining),
+      limit: d.limit,
+      ...(d.degraded ? { degraded: true } : {}),
+    });
   }
 }
 

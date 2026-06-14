@@ -3,6 +3,7 @@ import { createRedis, type RedisClient } from "./adapters/redis.js";
 import { LuaScripts } from "./adapters/scripts.js";
 import { createLogger, type Logger } from "./logger.js";
 import { Metrics } from "./metrics.js";
+import { CheckEventBus } from "./events.js";
 import { RateLimiter } from "./core/limiter.js";
 import { TenantStore } from "./service/tenantStore.js";
 import { RuleCache } from "./service/ruleCache.js";
@@ -22,6 +23,7 @@ export interface AppServices {
   rateLimit: RateLimitService;
   admin: AdminService;
   metrics: Metrics;
+  events: CheckEventBus;
 }
 
 export interface AppContext {
@@ -45,20 +47,27 @@ export function buildApp(startedAtMs: number): AppContext {
   });
 
   const metrics = new Metrics();
+  const events = new CheckEventBus();
   const scripts = new LuaScripts(redis);
   const limiter = new RateLimiter(scripts);
   const tenants = new TenantStore(redis);
   const rules = new RuleCache(tenants, config.ruleCacheTtlMs);
-  const rateLimit = new RateLimitService(tenants, rules, limiter, metrics, logger, {
-    failOpen: config.failOpen,
-  });
+  const rateLimit = new RateLimitService(
+    tenants,
+    rules,
+    limiter,
+    metrics,
+    logger,
+    { failOpen: config.failOpen },
+    events,
+  );
   const admin = new AdminService(tenants, rules);
 
   return {
     config,
     logger,
     redis,
-    services: { scripts, limiter, tenants, rules, rateLimit, admin, metrics },
+    services: { scripts, limiter, tenants, rules, rateLimit, admin, metrics, events },
     startedAtMs,
   };
 }

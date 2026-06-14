@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { AppContext } from "../../app.js";
 import { redisIsUp } from "../../adapters/redis.js";
 import { applyRateLimitHeaders, checkBody } from "./headers.js";
+import { DASHBOARD_HTML } from "./dashboard.js";
 import { parseCost } from "../../service/validation.js";
 import { AdminForbiddenError, InvalidRequestError } from "../../service/errors.js";
 import type { BatchEntry, BatchItem } from "../../service/rateLimitService.js";
@@ -25,6 +26,35 @@ function str(v: unknown, name: string): string {
 /** Register all REST routes. Routes are thin: parse -> service -> shape reply. */
 export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   const { rateLimit, admin } = ctx.services;
+
+  // ── Live dashboard (self-contained HTML) ────────────────────────────────────
+  app.get("/", async (_req, reply) => {
+    reply.header("Content-Type", "text/html; charset=utf-8");
+    return DASHBOARD_HTML;
+  });
+
+  // ── SSE stream of live check events (feeds the dashboard) ────────────────────
+  app.get("/v1/events", (_req, reply) => {
+    const raw = reply.raw;
+    raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+    reply.hijack(); // we manage the response stream ourselves
+
+    const send = (e: unknown): void => {
+      raw.write(`data: ${JSON.stringify(e)}\n\n`);
+    };
+    ctx.services.events.recent().forEach(send); // backfill
+    ctx.services.events.on("check", send);
+
+    const ping = setInterval(() => raw.write(":\n\n"), 25_000); // keep-alive
+    _req.raw.on("close", () => {
+      clearInterval(ping);
+      ctx.services.events.off("check", send);
+    });
+  });
 
   // ── Health ────────────────────────────────────────────────────────────────
   app.get("/v1/health", async () => ({
